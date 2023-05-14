@@ -24,58 +24,43 @@ st.set_page_config(layout="wide", page_title="GAN latent space explorer", page_i
 
 # functions ------------------------------------------------------------
 def seed2vec(G, seed):
-  return np.random.RandomState(seed).randn(1, G.z_dim)
+    return np.random.RandomState(seed).randn(1, G.z_dim)
 
 def display_image(image):
-  plt.axis('off')
-  plt.imshow(image)
-  plt.show()
-
-def generate_image(G, z, truncation_psi):
-    # Render images for dlatents initialized from random seeds.
-    Gs_kwargs = {
-        'output_transform': dict(func=tflib.convert_images_to_uint8, 
-        nchw_to_nhwc=True),
-        'randomize_noise': False
-    }
-    if truncation_psi is not None:
-        Gs_kwargs['truncation_psi'] = truncation_psi
-
-    label = np.zeros([1] + G.input_shapes[1][1:])
-    # [minibatch, height, width, channel]
-    images = G.run(z, label, **G_kwargs) 
-    return images[0]
+    plt.axis('off')
+    plt.imshow(image)
+    plt.show()
 
 def get_label(G, device, class_idx):
-  label = torch.zeros([1, G.c_dim], device=device)
-  if G.c_dim != 0:
-      if class_idx is None:
-          ctx.fail('Must specify class label with --class'\
-                   'when using a conditional network')
-      label[:, class_idx] = 1
-  else:
-      if class_idx is not None:
-          print ('warn: --class=lbl ignored when running '\
-            'on an unconditional network')
-  return label
+    label = torch.zeros([1, G.c_dim], device=device)
+    if G.c_dim != 0:
+        if class_idx is None:
+            ctx.fail('Must specify class label with --class'\
+                     'when using a conditional network')
+        label[:, class_idx] = 1
+    else:
+        if class_idx is not None:
+            print ('warn: --class=lbl ignored when running '\
+              'on an unconditional network')
+    return label
 
-def generate_image(device, G, z, truncation_psi=1.0, 
+def generate_image(device, G, z, truncation_psi=1.0,
                    noise_mode='const', class_idx=None):
-  z = torch.from_numpy(z).to(device)
-  label = get_label(G, device, class_idx)
-  img = G(z, label, truncation_psi=truncation_psi, 
-          noise_mode=noise_mode)
-  img = (img.permute(0, 2, 3, 1) * 127.5 + 128)\
-    .clamp(0, 255).to(torch.uint8)
-  return PIL.Image.fromarray(img[0].cpu().numpy(), 'RGB')
+    z = torch.from_numpy(z).to(device)
+    label = get_label(G, device, class_idx)
+    img = G(z, label, truncation_psi=truncation_psi,
+            noise_mode=noise_mode)
+    img = (img.permute(0, 2, 3, 1) * 127.5 + 128)\
+      .clamp(0, 255).to(torch.uint8)
+    return PIL.Image.fromarray(img[0].cpu().numpy(), 'RGB')
 
 # streamlit app --------------------------------------------------------
 st.title("GAN latent space explorer")
 
 # load model
 device = torch.device('cuda')
-with open("network-snapshot-000560.pkl" , 'rb') as fp:
-    G = legacy.load_network_pkl(fp)['G_ema'].requires_grad_(False).to(device) 
+with open("./PlayerGAN.pkl" , 'rb') as fp:
+    G = legacy.load_network_pkl(fp)['G_ema'].requires_grad_(False).to(device)
 
 # sidebar
 st.sidebar.title("Latent space controls")
@@ -98,78 +83,49 @@ st.sidebar.image(image, caption="Generated image", width=160)
 st.sidebar.title("Fine-tune")
 st.sidebar.write("Fine-tune the latent space of the model")
 
-# explore size  
-exploresize = st.sidebar.slider("Explore size", 1, 100, 40)
 
+
+# main page ------------------------------------------
+# explore size
+exploresize = st.sidebar.slider("Explore size", 1, 100, 11)
 explore = []
 for i in range(exploresize):
-  # seed numpy random
+    # seed numpy random
     np.random.seed(i)
     explore.append(np.random.rand(1, 512) - 0.5)
 
+z = z + explore[-1]
 
-# state management -----------------------------------
-if 'page_images' not in st.session_state:
-    st.session_state.page_images = []
+# generate image and show on main page
+page_images = []
+for c, i in enumerate(explore):
+    image = generate_image(device, G, z + explore[c], truncation_psi=truncation_psi)
+    # store these images in a list
+    page_images.append(image)
 
-
-
-
-
-# two columns
-col1, col2 = st.columns(2)
-
-with col1:
-    # check session state
-    if st.session_state.page_images == []:
-
-        z = z + explore[-1]
-
-        # generate image and show on main page
-        page_images = []
-        for c, i in enumerate(explore):
-            image = generate_image(device, G, z + explore[c], truncation_psi=truncation_psi)
-            # store these images in a list
-            page_images.append(image)
-        
-        # store the list in the session state
-        st.session_state.page_images = page_images
-
-    # show session state
-    # st.info("Session state: " + str(st.session_state.page_images))
-
-    # show 10 images per row
-    for i in range(0, len(st.session_state.page_images), 10):
-        st.info("Move direction: " + str(range(i, i+10)))
-        st.image(st.session_state.page_images[i:i+10], width=80)
+# show 10 images per row
+for i in range(0, len(page_images), 10):
+    st.info("Direction: " + str(range(i, i + 10)))
+    st.image(page_images[i:i+10], width=80)
 
 
 # choose the direction to move
-move_direction = st.sidebar.slider("Move direction", 0, exploresize-1, 8)
+move_direction = st.sidebar.slider("Move direction", 0, exploresize-1, 3)
 
+# if st.sidebar.button("MOVE"):
+# show the direction
+st.success("Generating images in direction: " + str(move_direction))
 
-with col2:
-    if st.sidebar.button("MOVE"):
-        # show the direction
-        st.success("Generating images in direction: " + str(move_direction))
-                
-        z = z + explore[move_direction]
+z = z + explore[move_direction]
 
-        # generate image and show on main page
-        page_images_move = []
-        for c, i in enumerate(explore):
-            z = z + explore[c]
-            image = generate_image(device, G, z, truncation_psi=truncation_psi)
-            # store these images in a list
-            page_images_move.append(image)
+# generate image and show on main page
+page_images_move = []
+for c, i in enumerate(explore):
+    z = z + explore[c]
+    image = generate_image(device, G, z, truncation_psi=truncation_psi)
+    # store these images in a list
+    page_images_move.append(image)
 
-        # show 10 images per row
-        for i in range(0, len(page_images_move), 10):
-            st.image(page_images_move[i:i+10], width=80)
-
-
-
-
-
-
-
+# show 10 images per row
+for i in range(0, len(page_images_move), 10):
+    st.image(page_images_move[i:i+10], width=80)

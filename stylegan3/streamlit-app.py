@@ -66,10 +66,11 @@ def generate_image(device, G, z, truncation_psi=1.0,
 # streamlit app --------------------------------------------------------
 st.title("GAN latent space explorer")
 
-# load model
-device = torch.device('cuda')
-with open("./PlayerGAN.pkl" , 'rb') as fp:
-    G = legacy.load_network_pkl(fp)['G_ema'].requires_grad_(False).to(device)
+# load model with press of a button
+if st.button("Load model"):
+    device = torch.device('cuda')
+    with open("./PlayerGAN.pkl" , 'rb') as fp:
+        G = legacy.load_network_pkl(fp)['G_ema'].requires_grad_(False).to(device)
 
 # sidebar
 st.sidebar.title("Latent space controls")
